@@ -1,0 +1,15 @@
+[package]
+name = "sdl3-experiment"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[dependencies.sdl3-sys]
+git = "https://github.com/maia-s/sdl3-sys-rs"
+branch = "main"
+features = ["build-from-source"]
+
+[dependencies.sdl3-main]
+git = "https://github.com/maia-s/sdl3-sys-rs"
+branch = "main"
