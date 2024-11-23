@@ -14,16 +14,27 @@
 
 use core::ffi::c_char;
 use core::ffi::CStr;
+use std::ptr::null_mut;
 use std::sync::Mutex;
 
-use sdl3_experiment::{GameState, KeyCode};
 use sdl3_main::{app_event, app_init, app_iterate, app_quit, AppResult};
 
+use sdl3_sys::gpu::SDL_AcquireGPUCommandBuffer;
+use sdl3_sys::gpu::SDL_AcquireGPUSwapchainTexture;
+use sdl3_sys::gpu::SDL_BeginGPURenderPass;
 use sdl3_sys::gpu::SDL_ClaimWindowForGPUDevice;
-use sdl3_sys::gpu::SDL_GPUSupportsProperties;
+use sdl3_sys::gpu::SDL_DestroyGPUDevice;
+use sdl3_sys::gpu::SDL_EndGPURenderPass;
+use sdl3_sys::gpu::SDL_GPUColorTargetInfo;
+use sdl3_sys::gpu::SDL_GPUDevice;
+use sdl3_sys::gpu::SDL_GPULoadOp;
+use sdl3_sys::gpu::SDL_GPUStoreOp;
+use sdl3_sys::gpu::SDL_GPUTexture;
+use sdl3_sys::gpu::SDL_ReleaseWindowFromGPUDevice;
+use sdl3_sys::gpu::SDL_SubmitGPUCommandBuffer;
 use sdl3_sys::gpu::{SDL_CreateGPUDevice, SDL_GPU_SHADERFORMAT_SPIRV};
 
-use sdl3_sys::render::SDL_CreateWindowAndRenderer;
+use sdl3_sys::pixels::SDL_FColor;
 use sdl3_sys::video::SDL_CreateWindow;
 use sdl3_sys::video::SDL_WINDOW_VULKAN;
 // You can `use sdl3_sys::everything::*` if you don't want to specify everything explicitly
@@ -35,19 +46,11 @@ use sdl3_sys::{
         SDL_PROP_APP_METADATA_COPYRIGHT_STRING, SDL_PROP_APP_METADATA_CREATOR_STRING,
         SDL_PROP_APP_METADATA_TYPE_STRING, SDL_PROP_APP_METADATA_URL_STRING,
     },
-    pixels::SDL_ALPHA_OPAQUE,
-    rect::SDL_FRect,
-    render::{
-        SDL_DestroyRenderer, SDL_RenderClear, SDL_RenderFillRect, SDL_RenderPresent, SDL_Renderer,
-        SDL_SetRenderDrawColor,
-    },
-    scancode::{
-        SDL_Scancode, SDL_SCANCODE_DOWN, SDL_SCANCODE_ESCAPE, SDL_SCANCODE_LEFT, SDL_SCANCODE_Q,
-        SDL_SCANCODE_R, SDL_SCANCODE_RIGHT, SDL_SCANCODE_UP,
-    },
     timer::SDL_GetTicks,
     video::{SDL_DestroyWindow, SDL_Window},
 };
+
+use sdl3_experiment::GameState;
 
 const BLOCK_SIZE_IN_PIXELS: i32 = 24;
 const SDL_WINDOW_WIDTH: i32 = BLOCK_SIZE_IN_PIXELS * GAME_WIDTH as i32;
@@ -58,18 +61,21 @@ const GAME_HEIGHT: i8 = 18;
 
 struct AppState {
     window: *mut SDL_Window,
-    renderer: *mut SDL_Renderer,
+    device: *mut SDL_GPUDevice,
     game_state: GameState,
 }
 
 impl Drop for AppState {
     fn drop(&mut self) {
         unsafe {
-            if !self.renderer.is_null() {
-                SDL_DestroyRenderer(self.renderer);
+            if !self.device.is_null() && !self.device.is_null() {
+                SDL_ReleaseWindowFromGPUDevice(self.device, self.window);
             }
             if !self.window.is_null() {
                 SDL_DestroyWindow(self.window);
+            }
+            if !self.device.is_null() {
+                SDL_DestroyGPUDevice(self.device);
             }
         }
     }
@@ -78,25 +84,14 @@ impl Drop for AppState {
 unsafe impl Send for AppState {}
 
 impl AppState {
-    fn new() -> Self {
-        Self {
-            window: core::ptr::null_mut(),
-            renderer: core::ptr::null_mut(),
-            game_state: GameState::new(),
-        }
-    }
-}
+    fn new(window: *mut SDL_Window, device: *mut SDL_GPUDevice) -> Self {
+        let game_state = GameState::new();
 
-fn translate_scan_code(scan_code: SDL_Scancode) -> Option<KeyCode> {
-    match scan_code {
-        SDL_SCANCODE_ESCAPE => Some(KeyCode::Esc),
-        SDL_SCANCODE_Q => Some(KeyCode::Q),
-        SDL_SCANCODE_R => Some(KeyCode::R),
-        SDL_SCANCODE_RIGHT => Some(KeyCode::Right),
-        SDL_SCANCODE_UP => Some(KeyCode::Up),
-        SDL_SCANCODE_LEFT => Some(KeyCode::Left),
-        SDL_SCANCODE_DOWN => Some(KeyCode::Down),
-        _ => None,
+        Self {
+            window,
+            device,
+            game_state,
+        }
     }
 }
 
@@ -106,34 +101,73 @@ fn app_iterate(app: &mut AppState) -> AppResult {
         let ticks = SDL_GetTicks();
         app.game_state.step(ticks);
 
-        SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-        SDL_RenderClear(app.renderer);
+        let command_buffer = SDL_AcquireGPUCommandBuffer(app.device);
+        if command_buffer.is_null() {
+            dbg_sdl_error("failed to acquire command buffer");
+            return AppResult::Failure;
+        }
 
-        SDL_SetRenderDrawColor(app.renderer, 0, 128, 0, SDL_ALPHA_OPAQUE);
-        let player_rect = app.game_state.player_rect();
-        let player_rect = SDL_FRect {
-            x: player_rect.x,
-            y: player_rect.y,
-            w: player_rect.w,
-            h: player_rect.h,
-        };
-        SDL_RenderFillRect(app.renderer, &player_rect);
+        let mut swapchain_texture: *mut SDL_GPUTexture = null_mut();
+        if !SDL_AcquireGPUSwapchainTexture(
+            command_buffer,
+            app.window,
+            &mut swapchain_texture,
+            null_mut(),
+            null_mut(),
+        ) {
+            dbg_sdl_error("failed to acquire swapchain texture");
+            return AppResult::Failure;
+        }
 
-        SDL_RenderPresent(app.renderer);
+        if !swapchain_texture.is_null() {
+            let color_target_info = SDL_GPUColorTargetInfo {
+                texture: swapchain_texture,
+                clear_color: SDL_FColor {
+                    r: 0.3,
+                    g: 0.4,
+                    b: 0.5,
+                    a: 1.0,
+                },
+                load_op: SDL_GPULoadOp::CLEAR,
+                store_op: SDL_GPUStoreOp::STORE,
+                // TODO: implement Default?
+                cycle: false,
+                cycle_resolve_texture: false,
+                resolve_texture: null_mut(),
+                mip_level: 0,
+                layer_or_depth_plane: 0,
+                resolve_mip_level: 0,
+                resolve_layer: 0,
+                padding1: 0,
+                padding2: 0,
+            };
+
+            let num_color_targets = 1;
+            let depth_stencil_target_info = null_mut();
+            let render_pass = SDL_BeginGPURenderPass(
+                command_buffer,
+                &color_target_info,
+                num_color_targets,
+                depth_stencil_target_info,
+            );
+            SDL_EndGPURenderPass(render_pass);
+        }
+
+        SDL_SubmitGPUCommandBuffer(command_buffer);
     }
 
     AppResult::Continue
 }
 
 const EXTENDED_METADATA: &[(*const c_char, *const c_char)] = &[
-    (SDL_PROP_APP_METADATA_URL_STRING, c"TODO url".as_ptr()),
+    (SDL_PROP_APP_METADATA_URL_STRING, c"giesch.dev".as_ptr()),
     (
         SDL_PROP_APP_METADATA_CREATOR_STRING,
-        c"TODO creator".as_ptr(),
+        c"Dan Knutson".as_ptr(),
     ),
     (
         SDL_PROP_APP_METADATA_COPYRIGHT_STRING,
-        c"TODO copyright".as_ptr(),
+        c"Copyright Dan Knutson 2024".as_ptr(),
     ),
     (SDL_PROP_APP_METADATA_TYPE_STRING, c"game".as_ptr()),
 ];
@@ -146,60 +180,56 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             c"0.0".as_ptr(),
             c"dev.giesch.Example".as_ptr(),
         ) {
-            return dbg_sdl_error();
+            dbg_sdl_error("SDL_SetAppMetaData failed");
+            return None;
         }
 
         for (key, value) in EXTENDED_METADATA.iter().copied() {
             if !SDL_SetAppMetadataProperty(key, value) {
-                return dbg_sdl_error();
+                dbg_sdl_error("SDL_SetAppMetadataProperty failed");
+                return None;
             }
         }
 
         if !SDL_Init(SDL_INIT_VIDEO) {
-            return dbg_sdl_error();
-        }
-
-        let mut app = AppState::new();
-        if !SDL_CreateWindowAndRenderer(
-            c"SDL3 Experiment".as_ptr(),
-            SDL_WINDOW_WIDTH,
-            SDL_WINDOW_HEIGHT,
-            0,
-            &mut app.window,
-            &mut app.renderer,
-        ) {
-            return dbg_sdl_error();
+            dbg_sdl_error("SDL_Init failed");
+            return None;
         }
 
         // GPU EXPERIMENTING
 
-        // let window = SDL_CreateWindow(
-        //     c"GPU Window?".as_ptr(),
-        //     SDL_WINDOW_WIDTH,
-        //     SDL_WINDOW_HEIGHT,
-        //     SDL_WINDOW_VULKAN,
-        // );
-        // if window.is_null() {
-        //     return dbg_sdl_error();
-        // }
+        let window = SDL_CreateWindow(
+            c"GPU Window?".as_ptr(),
+            SDL_WINDOW_WIDTH,
+            SDL_WINDOW_HEIGHT,
+            SDL_WINDOW_VULKAN,
+        );
+        if window.is_null() {
+            dbg_sdl_error("SDL_CreateWindow failed");
+            return None;
+        }
 
-        // let format_flags = SDL_GPU_SHADERFORMAT_SPIRV;
-        // let device = SDL_CreateGPUDevice(format_flags, true, std::ptr::null());
-        // if device.is_null() {
-        //     return dbg_sdl_error();
-        // }
-        // if !SDL_ClaimWindowForGPUDevice(device, window) {
-        //     return dbg_sdl_error();
-        // }
+        let format_flags = SDL_GPU_SHADERFORMAT_SPIRV;
+        let device = SDL_CreateGPUDevice(format_flags, true, std::ptr::null());
+        if device.is_null() {
+            dbg_sdl_error("SDL_CreateGPUDevice failed");
+            return None;
+        }
+        if !SDL_ClaimWindowForGPUDevice(device, window) {
+            dbg_sdl_error("SDL_ClaimWindowForGPUDevice failed");
+            return None;
+        }
+
+        let app = AppState::new(window, device);
 
         Some(Box::new(Mutex::new(app)))
     }
 }
 
-unsafe fn dbg_sdl_error() -> Option<Box<Mutex<AppState>>> {
+unsafe fn dbg_sdl_error(msg: &str) {
+    println!("{}", msg);
     let error = CStr::from_ptr(SDL_GetError()).to_string_lossy();
     dbg!(&error);
-    None
 }
 
 #[app_event]
@@ -209,16 +239,12 @@ fn app_event(app: &mut AppState, event: &SDL_Event) -> AppResult {
             SDL_EVENT_QUIT => AppResult::Success,
 
             SDL_EVENT_KEY_DOWN => {
-                if let Some(key_code) = translate_scan_code(event.key.scancode) {
-                    app.game_state.key_pressed(key_code);
-                }
+                app.game_state.key_pressed(event.key.scancode);
                 AppResult::Continue
             }
 
             SDL_EVENT_KEY_UP => {
-                if let Some(key_code) = translate_scan_code(event.key.scancode) {
-                    app.game_state.key_released(key_code);
-                }
+                app.game_state.key_released(event.key.scancode);
                 AppResult::Continue
             }
 
