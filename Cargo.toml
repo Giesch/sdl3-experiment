@@ -8,8 +8,11 @@ edition = "2021"
 [dependencies.sdl3-sys]
 git = "https://github.com/maia-s/sdl3-sys-rs"
 branch = "main"
-features = ["build-from-source"]
+features = ["build-from-source-static"]
 
 [dependencies.sdl3-main]
 git = "https://github.com/maia-s/sdl3-sys-rs"
 branch = "main"
+
+[build-dependencies]
+cmake = "0.1"

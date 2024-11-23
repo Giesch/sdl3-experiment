@@ -1,5 +1,8 @@
-const STEP_RATE_IN_MILLISECONDS: u64 = 125;
+/// about 60fps
+const STEP_RATE_IN_MILLISECONDS: u64 = 16;
 const BLOCK_SIZE_IN_PIXELS: i32 = 24;
+/// about half a block per frame
+const MOVE_SPEED: f32 = 12.0;
 
 pub const WINDOW_WIDTH: i32 = BLOCK_SIZE_IN_PIXELS * GAME_WIDTH as i32;
 pub const WINDOW_HEIGHT: i32 = BLOCK_SIZE_IN_PIXELS * GAME_HEIGHT as i32;
@@ -54,19 +57,17 @@ impl GameState {
     }
 
     fn fixed_step(&mut self) {
-        let move_speed = BLOCK_SIZE_IN_PIXELS as f32;
-
         if self.keys_down.contains(&KeyCode::Up) {
-            self.player_y -= move_speed;
+            self.player_y -= MOVE_SPEED;
         }
         if self.keys_down.contains(&KeyCode::Down) {
-            self.player_y += move_speed;
+            self.player_y += MOVE_SPEED;
         }
         if self.keys_down.contains(&KeyCode::Left) {
-            self.player_x -= move_speed;
+            self.player_x -= MOVE_SPEED;
         }
         if self.keys_down.contains(&KeyCode::Right) {
-            self.player_x += move_speed;
+            self.player_x += MOVE_SPEED;
         }
     }
 

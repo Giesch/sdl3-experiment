@@ -13,13 +13,22 @@
 // This code is public domain. Feel free to use it for any purpose!
 
 use core::ffi::c_char;
+use core::ffi::CStr;
 use std::sync::Mutex;
 
 use sdl3_experiment::{GameState, KeyCode};
 use sdl3_main::{app_event, app_init, app_iterate, app_quit, AppResult};
 
+use sdl3_sys::gpu::SDL_ClaimWindowForGPUDevice;
+use sdl3_sys::gpu::SDL_GPUSupportsProperties;
+use sdl3_sys::gpu::{SDL_CreateGPUDevice, SDL_GPU_SHADERFORMAT_SPIRV};
+
+use sdl3_sys::render::SDL_CreateWindowAndRenderer;
+use sdl3_sys::video::SDL_CreateWindow;
+use sdl3_sys::video::SDL_WINDOW_VULKAN;
 // You can `use sdl3_sys::everything::*` if you don't want to specify everything explicitly
 use sdl3_sys::{
+    error::SDL_GetError,
     events::{SDL_Event, SDL_EventType, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP, SDL_EVENT_QUIT},
     init::{
         SDL_Init, SDL_SetAppMetadata, SDL_SetAppMetadataProperty, SDL_INIT_VIDEO,
@@ -29,8 +38,8 @@ use sdl3_sys::{
     pixels::SDL_ALPHA_OPAQUE,
     rect::SDL_FRect,
     render::{
-        SDL_CreateWindowAndRenderer, SDL_DestroyRenderer, SDL_RenderClear, SDL_RenderFillRect,
-        SDL_RenderPresent, SDL_Renderer, SDL_SetRenderDrawColor,
+        SDL_DestroyRenderer, SDL_RenderClear, SDL_RenderFillRect, SDL_RenderPresent, SDL_Renderer,
+        SDL_SetRenderDrawColor,
     },
     scancode::{
         SDL_Scancode, SDL_SCANCODE_DOWN, SDL_SCANCODE_ESCAPE, SDL_SCANCODE_LEFT, SDL_SCANCODE_Q,
@@ -137,21 +146,20 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             c"0.0".as_ptr(),
             c"dev.giesch.Example".as_ptr(),
         ) {
-            return None;
+            return dbg_sdl_error();
         }
 
         for (key, value) in EXTENDED_METADATA.iter().copied() {
             if !SDL_SetAppMetadataProperty(key, value) {
-                return None;
+                return dbg_sdl_error();
             }
         }
 
         if !SDL_Init(SDL_INIT_VIDEO) {
-            return None;
+            return dbg_sdl_error();
         }
 
         let mut app = AppState::new();
-
         if !SDL_CreateWindowAndRenderer(
             c"SDL3 Experiment".as_ptr(),
             SDL_WINDOW_WIDTH,
@@ -160,11 +168,38 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             &mut app.window,
             &mut app.renderer,
         ) {
-            return None;
+            return dbg_sdl_error();
         }
+
+        // GPU EXPERIMENTING
+
+        // let window = SDL_CreateWindow(
+        //     c"GPU Window?".as_ptr(),
+        //     SDL_WINDOW_WIDTH,
+        //     SDL_WINDOW_HEIGHT,
+        //     SDL_WINDOW_VULKAN,
+        // );
+        // if window.is_null() {
+        //     return dbg_sdl_error();
+        // }
+
+        // let format_flags = SDL_GPU_SHADERFORMAT_SPIRV;
+        // let device = SDL_CreateGPUDevice(format_flags, true, std::ptr::null());
+        // if device.is_null() {
+        //     return dbg_sdl_error();
+        // }
+        // if !SDL_ClaimWindowForGPUDevice(device, window) {
+        //     return dbg_sdl_error();
+        // }
 
         Some(Box::new(Mutex::new(app)))
     }
+}
+
+unsafe fn dbg_sdl_error() -> Option<Box<Mutex<AppState>>> {
+    let error = CStr::from_ptr(SDL_GetError()).to_string_lossy();
+    dbg!(&error);
+    None
 }
 
 #[app_event]
