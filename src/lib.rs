@@ -14,6 +14,11 @@ pub struct GameState {
     accumulated_ticks: u64,
     last_step: u64,
     keys_down: Vec<SDL_Scancode>,
+    keys_just_pressed: Vec<SDL_Scancode>,
+
+    pub use_wire_frame_mode: bool,
+    pub use_small_viewport: bool,
+    pub use_scissor_rect: bool,
 }
 
 impl GameState {
@@ -22,17 +27,24 @@ impl GameState {
             accumulated_ticks: 0,
             last_step: 0,
             keys_down: Default::default(),
+            keys_just_pressed: Default::default(),
+
+            use_wire_frame_mode: false,
+            use_small_viewport: false,
+            use_scissor_rect: false,
         }
     }
 
     pub fn key_pressed(&mut self, scan_code: SDL_Scancode) {
         if !self.keys_down.contains(&scan_code) {
             self.keys_down.push(scan_code);
+            self.keys_just_pressed.push(scan_code);
         }
     }
 
     pub fn key_released(&mut self, scan_code: SDL_Scancode) {
-        self.keys_down.retain(|k| *k != scan_code)
+        self.keys_down.retain(|k| *k != scan_code);
+        self.keys_just_pressed.retain(|k| *k != scan_code);
     }
 
     pub fn step(&mut self, ticks: u64) {
@@ -43,10 +55,24 @@ impl GameState {
         while self.accumulated_ticks >= STEP_RATE_IN_MILLISECONDS {
             self.accumulated_ticks -= STEP_RATE_IN_MILLISECONDS;
             self.fixed_step();
+
+            // is this the right way to handle that? seems fine maybe?
+            self.keys_just_pressed.clear();
         }
     }
 
     fn fixed_step(&mut self) {
-        // TODO
+        if self.keys_just_pressed.contains(&SDL_Scancode::LEFT) {
+            self.use_wire_frame_mode = !self.use_wire_frame_mode;
+            println!("toggled use_wire_frame_mode");
+        }
+        if self.keys_just_pressed.contains(&SDL_Scancode::DOWN) {
+            self.use_small_viewport = !self.use_small_viewport;
+            println!("toggled use_small_viewport");
+        }
+        if self.keys_just_pressed.contains(&SDL_Scancode::RIGHT) {
+            self.use_scissor_rect = !self.use_scissor_rect;
+            println!("toggled use_scissor_rect");
+        }
     }
 }
