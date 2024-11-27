@@ -2,6 +2,7 @@
 name = "sdl3-experiment"
 version = "0.1.0"
 edition = "2021"
+default-run = "sdl3-experiment"
 
 [dependencies]
 

@@ -56,7 +56,6 @@ impl GameState {
             self.accumulated_ticks -= STEP_RATE_IN_MILLISECONDS;
             self.fixed_step();
 
-            // is this the right way to handle that? seems fine maybe?
             self.keys_just_pressed.clear();
         }
     }
@@ -64,15 +63,12 @@ impl GameState {
     fn fixed_step(&mut self) {
         if self.keys_just_pressed.contains(&SDL_Scancode::LEFT) {
             self.use_wire_frame_mode = !self.use_wire_frame_mode;
-            println!("toggled use_wire_frame_mode");
         }
         if self.keys_just_pressed.contains(&SDL_Scancode::DOWN) {
             self.use_small_viewport = !self.use_small_viewport;
-            println!("toggled use_small_viewport");
         }
         if self.keys_just_pressed.contains(&SDL_Scancode::RIGHT) {
             self.use_scissor_rect = !self.use_scissor_rect;
-            println!("toggled use_scissor_rect");
         }
     }
 }

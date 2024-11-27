@@ -299,12 +299,10 @@ struct LoadShaderRequest {
 
 unsafe fn load_shader(device: *mut SDL_GPUDevice, req: LoadShaderRequest) -> *mut SDL_GPUShader {
     let full_path = format!("./content/shaders/compiled/{}.spv", req.file_name);
-
     let full_path = CString::new(full_path).unwrap();
     let mut code_size = 0;
-
     let loaded_code = SDL_LoadFile(full_path.as_ptr(), &mut code_size);
-    if loaded_code.is_null() || code_size == 0 {
+    if loaded_code.is_null() {
         dbg_sdl_error(&format!("failed to load shader: {}", req.file_name));
         return null_mut();
     }
