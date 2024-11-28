@@ -30,7 +30,6 @@ checksum = "5a2d2f3481209a6b42eec2fbb49063fb4e8d35b57023401495d4fe0f85c817f0"
 name = "sdl3-experiment"
 version = "0.1.0"
 dependencies = [
- "cmake",
  "sdl3-main",
  "sdl3-sys",
 ]
