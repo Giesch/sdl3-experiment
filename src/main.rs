@@ -21,6 +21,7 @@ use sdl3_main::{app_event, app_init, app_iterate, app_quit, AppResult};
 use sdl3_sys::everything::*;
 
 use sdl3_experiment::GameState;
+use serde::Deserialize;
 
 const BLOCK_SIZE_IN_PIXELS: i32 = 24;
 const SDL_WINDOW_WIDTH: i32 = BLOCK_SIZE_IN_PIXELS * GAME_WIDTH as i32;
@@ -207,33 +208,13 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             return None;
         }
 
-        let vert_shader = load_shader(
-            device,
-            LoadShaderRequest {
-                file_name: "RawTriangle.vert",
-                shader_stage: SDL_GPU_SHADERSTAGE_VERTEX,
-                sampler_count: 0,
-                uniform_buffer_count: 0,
-                storage_buffer_count: 0,
-                storage_texture_count: 0,
-            },
-        );
+        let vert_shader = load_shader(device, "RawTriangle.vert");
         if vert_shader.is_null() {
             dbg_sdl_error("failed to load vert shader");
             return None;
         }
 
-        let frag_shader = load_shader(
-            device,
-            LoadShaderRequest {
-                file_name: "SolidColor.frag",
-                shader_stage: SDL_GPU_SHADERSTAGE_FRAGMENT,
-                sampler_count: 0,
-                uniform_buffer_count: 0,
-                storage_buffer_count: 0,
-                storage_texture_count: 0,
-            },
-        );
+        let frag_shader = load_shader(device, "SolidColor.frag");
         if frag_shader.is_null() {
             dbg_sdl_error("failed to load frag shader");
             return None;
@@ -288,40 +269,43 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
     }
 }
 
-struct LoadShaderRequest {
-    file_name: &'static str,
-    shader_stage: SDL_GPUShaderStage,
-    sampler_count: u32,
-    uniform_buffer_count: u32,
-    storage_buffer_count: u32,
-    storage_texture_count: u32,
-}
-
-unsafe fn load_shader(device: *mut SDL_GPUDevice, req: LoadShaderRequest) -> *mut SDL_GPUShader {
-    let full_path = format!("./content/shaders/compiled/{}.spv", req.file_name);
+unsafe fn load_shader(device: *mut SDL_GPUDevice, file_name: &'static str) -> *mut SDL_GPUShader {
+    let full_path = format!("./content/shaders/compiled/{}.spv", file_name);
     let full_path = CString::new(full_path).unwrap();
     let mut code_size = 0;
     let loaded_code = SDL_LoadFile(full_path.as_ptr(), &mut code_size);
     if loaded_code.is_null() {
-        dbg_sdl_error(&format!("failed to load shader: {}", req.file_name));
+        dbg_sdl_error(&format!("failed to load shader: {}", file_name));
         return null_mut();
     }
 
+    let json_path = format!("./content/shaders/compiled/{}.json", file_name);
+    let json = std::fs::read_to_string(json_path).expect("missing shader json");
+    let meta: ShaderMeta = serde_json::from_str(&json).unwrap();
+
+    let stage = if file_name.ends_with(".vert") {
+        SDL_GPUShaderStage::VERTEX
+    } else if file_name.ends_with(".frag") {
+        SDL_GPUShaderStage::FRAGMENT
+    } else {
+        panic!("expected a file name ending in '.frag' or '.vert'")
+    };
+
     let shader_info = SDL_GPUShaderCreateInfo {
+        stage,
         code: loaded_code as *const u8,
         code_size,
         entrypoint: c"main".as_ptr(),
         format: SDL_GPU_SHADERFORMAT_SPIRV,
-        stage: req.shader_stage,
-        num_samplers: req.sampler_count,
-        num_storage_buffers: req.storage_buffer_count,
-        num_uniform_buffers: req.uniform_buffer_count,
-        num_storage_textures: req.storage_texture_count,
+        num_samplers: meta.samplers,
+        num_storage_buffers: meta.storage_buffers,
+        num_uniform_buffers: meta.uniform_buffers,
+        num_storage_textures: meta.storage_textures,
         props: 0,
     };
     let shader = SDL_CreateGPUShader(device, &shader_info);
     if shader.is_null() {
-        dbg_sdl_error(&format!("failed to create shader: {}", req.file_name));
+        dbg_sdl_error(&format!("failed to create shader: {}", file_name));
         SDL_free(loaded_code);
         return null_mut();
     }
@@ -329,6 +313,16 @@ unsafe fn load_shader(device: *mut SDL_GPUDevice, req: LoadShaderRequest) -> *mu
     SDL_free(loaded_code);
 
     shader
+}
+
+/// JSON format for resource counts emitted by shadercross
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ShaderMeta {
+    samplers: u32,
+    storage_textures: u32,
+    storage_buffers: u32,
+    uniform_buffers: u32,
 }
 
 unsafe fn dbg_sdl_error(msg: &str) {
