@@ -270,18 +270,29 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
 }
 
 unsafe fn load_shader(device: *mut SDL_GPUDevice, file_name: &'static str) -> *mut SDL_GPUShader {
-    let full_path = format!("./content/shaders/compiled/{}.spv", file_name);
+    const COMPILED_SHADERS_DIR: &'static str = "./content/shaders/compiled";
+
+    let full_path = format!("{COMPILED_SHADERS_DIR}/{file_name}.spv");
     let full_path = CString::new(full_path).unwrap();
     let mut code_size = 0;
     let loaded_code = SDL_LoadFile(full_path.as_ptr(), &mut code_size);
     if loaded_code.is_null() {
-        dbg_sdl_error(&format!("failed to load shader: {}", file_name));
+        dbg_sdl_error(&format!("failed to load shader: {file_name}"));
         return null_mut();
     }
 
-    let json_path = format!("./content/shaders/compiled/{}.json", file_name);
-    let json = std::fs::read_to_string(json_path).expect("missing shader json");
-    let meta: ShaderMeta = serde_json::from_str(&json).unwrap();
+    let json_path = format!("{COMPILED_SHADERS_DIR}/{file_name}.json");
+    let Ok(json) = std::fs::read_to_string(&json_path) else {
+        println!("failed to find shader json: {json_path}");
+        return null_mut();
+    };
+    let meta = match serde_json::from_str::<ShaderMeta>(&json) {
+        Ok(m) => m,
+        Err(e) => {
+            println!("invalid shader json: {e} {json_path}");
+            return null_mut();
+        }
+    };
 
     let stage = if file_name.ends_with(".vert") {
         SDL_GPUShaderStage::VERTEX
