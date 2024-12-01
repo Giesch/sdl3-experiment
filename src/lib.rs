@@ -1,5 +1,7 @@
 use sdl3_sys::scancode::SDL_Scancode;
 
+pub mod common;
+
 /// about 60fps
 const STEP_RATE_IN_MILLISECONDS: u64 = 16;
 const BLOCK_SIZE_IN_PIXELS: i32 = 24;

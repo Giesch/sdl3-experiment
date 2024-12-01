@@ -1,0 +1,1 @@
+{ "samplers": 0, "readOnlyStorageTextures": 0, "readOnlyStorageBuffers": 1, "readWriteStorageTextures": 0, "readWriteStorageBuffers": 1, "uniformBuffers": 0, "threadCountX": 64, "threadCountY": 1, "threadCountZ": 1 }

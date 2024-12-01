@@ -1,10 +1,7 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
-dev:
-    cargo run
-
-build:
-    cargo build --release
+trangle:
+    cargo run --example basic_triangle
 
 shaders:
     cargo run --bin shaders
