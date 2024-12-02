@@ -16,9 +16,9 @@ pub fn main() {
         let file_name = entry.file_name();
         let file_name = file_name.to_string_lossy();
 
-        for out_format in ["spv", "json"] {
+        for out_format in ["spv", "dxil", "json", "msl"] {
             let out_file_name = file_name.replace("hlsl", out_format);
-            let out_path = format!("{SHADERS_COMPILED_DIR}/{out_file_name}");
+            let out_path = format!("{SHADERS_COMPILED_DIR}/{out_format}/{out_file_name}");
 
             Command::new(SHADERCROSS)
                 .arg(&in_path)

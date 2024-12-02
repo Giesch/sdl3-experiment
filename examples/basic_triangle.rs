@@ -1,6 +1,5 @@
-use std::ffi::c_char;
 use std::mem::zeroed;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 use std::sync::Mutex;
 
 use sdl3_main::{app_event, app_init, app_iterate, app_quit, AppResult};
@@ -9,8 +8,6 @@ use sdl3_sys::everything::*;
 use sdl3_experiment::common::*;
 
 const BLOCK_SIZE_IN_PIXELS: i32 = 24;
-const SDL_WINDOW_WIDTH: i32 = BLOCK_SIZE_IN_PIXELS * GAME_WIDTH as i32;
-const SDL_WINDOW_HEIGHT: i32 = BLOCK_SIZE_IN_PIXELS * GAME_HEIGHT as i32;
 
 const GAME_WIDTH: i8 = 24;
 const GAME_HEIGHT: i8 = 18;
@@ -33,15 +30,7 @@ impl Drop for AppState {
                 SDL_ReleaseGPUGraphicsPipeline(self.device, self.line_pipeline);
             }
 
-            if !self.device.is_null() && !self.device.is_null() {
-                SDL_ReleaseWindowFromGPUDevice(self.device, self.window);
-            }
-            if !self.window.is_null() {
-                SDL_DestroyWindow(self.window);
-            }
-            if !self.device.is_null() {
-                SDL_DestroyGPUDevice(self.device);
-            }
+            deinit_gpu_window(self.device, self.window);
         }
     }
 }
@@ -132,66 +121,15 @@ fn app_iterate(app: &mut AppState) -> AppResult {
     AppResult::Continue
 }
 
-const EXTENDED_METADATA: &[(*const c_char, *const c_char)] = &[
-    (SDL_PROP_APP_METADATA_URL_STRING, c"giesch.dev".as_ptr()),
-    (
-        SDL_PROP_APP_METADATA_CREATOR_STRING,
-        c"Dan Knutson".as_ptr(),
-    ),
-    (
-        SDL_PROP_APP_METADATA_COPYRIGHT_STRING,
-        c"Copyright Dan Knutson 2024".as_ptr(),
-    ),
-    (SDL_PROP_APP_METADATA_TYPE_STRING, c"game".as_ptr()),
-];
-
 #[app_init]
 fn app_init() -> Option<Box<Mutex<AppState>>> {
     unsafe {
-        if !SDL_SetAppMetadata(
-            c"Example Rust SDL3 game".as_ptr(),
-            c"0.0".as_ptr(),
-            c"dev.giesch.Example".as_ptr(),
-        ) {
-            dbg_sdl_error("SDL_SetAppMetaData failed");
+        let window_title = c"GPU Window".as_ptr();
+        // TODO other shader types
+        let window_flags = SDL_WINDOW_VULKAN;
+        let Some((window, device)) = init_gpu_window(window_title, window_flags) else {
             return None;
-        }
-
-        for (key, value) in EXTENDED_METADATA.iter().copied() {
-            if !SDL_SetAppMetadataProperty(key, value) {
-                dbg_sdl_error("SDL_SetAppMetadataProperty failed");
-                return None;
-            }
-        }
-
-        if !SDL_Init(SDL_INIT_VIDEO) {
-            dbg_sdl_error("SDL_Init failed");
-            return None;
-        }
-
-        // GPU
-
-        let window = SDL_CreateWindow(
-            c"GPU Window".as_ptr(),
-            SDL_WINDOW_WIDTH,
-            SDL_WINDOW_HEIGHT,
-            SDL_WINDOW_VULKAN,
-        );
-        if window.is_null() {
-            dbg_sdl_error("SDL_CreateWindow failed");
-            return None;
-        }
-
-        let format_flags = SDL_GPU_SHADERFORMAT_SPIRV;
-        let device = SDL_CreateGPUDevice(format_flags, true, null());
-        if device.is_null() {
-            dbg_sdl_error("SDL_CreateGPUDevice failed");
-            return None;
-        }
-        if !SDL_ClaimWindowForGPUDevice(device, window) {
-            dbg_sdl_error("SDL_ClaimWindowForGPUDevice failed");
-            return None;
-        }
+        };
 
         let vert_shader = load_shader(device, "RawTriangle.vert");
         if vert_shader.is_null() {

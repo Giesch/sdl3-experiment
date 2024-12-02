@@ -1,17 +1,31 @@
-use std::ffi::{CStr, CString};
-use std::ptr::null_mut;
+use std::ffi::{c_char, CStr, CString};
+use std::ptr::{null, null_mut};
 
 use sdl3_sys::everything::*;
 
 use serde::Deserialize;
 
+/// Load a precompiled shader based on file name.
+/// Relies on the structure of the content directory and the file name suffix.
 pub unsafe fn load_shader(
     device: *mut SDL_GPUDevice,
     file_name: &'static str,
 ) -> *mut SDL_GPUShader {
     const COMPILED_SHADERS_DIR: &'static str = "./content/shaders/compiled";
 
-    let full_path = format!("{COMPILED_SHADERS_DIR}/{file_name}.spv");
+    let backend_formats = SDL_GetGPUShaderFormats(device);
+    let (format, entrypoint) = if backend_formats & SDL_GPU_SHADERFORMAT_SPIRV != 0 {
+        (SDL_GPU_SHADERFORMAT_SPIRV, c"main".as_ptr())
+    } else if backend_formats & SDL_GPU_SHADERFORMAT_MSL != 0 {
+        (SDL_GPU_SHADERFORMAT_MSL, c"main0".as_ptr())
+    } else if backend_formats & SDL_GPU_SHADERFORMAT_DXIL != 0 {
+        (SDL_GPU_SHADERFORMAT_DXIL, c"main".as_ptr())
+    } else {
+        println!("unrecognized backend shader format");
+        return null_mut();
+    };
+
+    let full_path = format!("{COMPILED_SHADERS_DIR}/spv/{file_name}.spv");
     let full_path = CString::new(full_path).unwrap();
     let mut code_size = 0;
     let loaded_code = SDL_LoadFile(full_path.as_ptr(), &mut code_size);
@@ -20,13 +34,13 @@ pub unsafe fn load_shader(
         return null_mut();
     }
 
-    let json_path = format!("{COMPILED_SHADERS_DIR}/{file_name}.json");
+    let json_path = format!("{COMPILED_SHADERS_DIR}/json/{file_name}.json");
     let Ok(json) = std::fs::read_to_string(&json_path) else {
         println!("failed to find shader json: {json_path}");
         return null_mut();
     };
     let meta = match serde_json::from_str::<ShaderMeta>(&json) {
-        Ok(m) => m,
+        Ok(meta) => meta,
         Err(e) => {
             println!("invalid shader json: {e} {json_path}");
             return null_mut();
@@ -42,11 +56,11 @@ pub unsafe fn load_shader(
     };
 
     let shader_info = SDL_GPUShaderCreateInfo {
-        stage,
         code: loaded_code as *const u8,
+        stage,
+        entrypoint,
+        format,
         code_size,
-        entrypoint: c"main".as_ptr(),
-        format: SDL_GPU_SHADERFORMAT_SPIRV,
         num_samplers: meta.samplers,
         num_storage_buffers: meta.storage_buffers,
         num_uniform_buffers: meta.uniform_buffers,
@@ -79,4 +93,48 @@ struct ShaderMeta {
     storage_textures: u32,
     storage_buffers: u32,
     uniform_buffers: u32,
+}
+
+pub fn init_gpu_window(
+    window_title: *const c_char,
+    window_flags: SDL_WindowFlags,
+) -> Option<(*mut SDL_Window, *mut SDL_GPUDevice)> {
+    unsafe {
+        if !SDL_Init(SDL_INIT_VIDEO) {
+            dbg_sdl_error("SDL_Init failed");
+            return None;
+        }
+
+        let window = SDL_CreateWindow(window_title, 640, 480, window_flags);
+        if window.is_null() {
+            dbg_sdl_error("SDL_CreateWindow failed");
+            return None;
+        }
+
+        let format_flags =
+            SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_MSL;
+        let device = SDL_CreateGPUDevice(format_flags, true, null());
+        if device.is_null() {
+            dbg_sdl_error("SDL_CreateGPUDevice failed");
+            return None;
+        }
+        if !SDL_ClaimWindowForGPUDevice(device, window) {
+            dbg_sdl_error("SDL_ClaimWindowForGPUDevice failed");
+            return None;
+        }
+
+        Some((window, device))
+    }
+}
+
+pub unsafe fn deinit_gpu_window(device: *mut SDL_GPUDevice, window: *mut SDL_Window) {
+    if !device.is_null() && !device.is_null() {
+        SDL_ReleaseWindowFromGPUDevice(device, window);
+    }
+    if !window.is_null() {
+        SDL_DestroyWindow(window);
+    }
+    if !device.is_null() {
+        SDL_DestroyGPUDevice(device);
+    }
 }
