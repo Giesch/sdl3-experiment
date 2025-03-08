@@ -123,7 +123,7 @@ fn app_iterate(app: &mut AppState) -> AppResult {
 #[app_init]
 fn app_init() -> Option<Box<Mutex<AppState>>> {
     unsafe {
-        let title = c"GPU Window".as_ptr();
+        let title = c"Basic Triangle".as_ptr();
         let Some((window, device)) = init_gpu_window(title, 0) else {
             return None;
         };

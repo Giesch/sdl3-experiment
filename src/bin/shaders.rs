@@ -5,6 +5,8 @@ const SHADERCROSS: &'static str = "./bin/shadercross";
 const SHADERS_SOURCE_DIR: &'static str = "./content/shaders/source";
 const SHADERS_COMPILED_DIR: &'static str = "./content/shaders/compiled";
 
+/// Compiles each hlsl source shader into the 3 supported output formats and json metadata.
+/// Depends on the precompiled shadercross cli in `/bin`.
 pub fn main() {
     let shader_source_dir = std::fs::read_dir(SHADERS_SOURCE_DIR).unwrap();
 
