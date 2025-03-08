@@ -1,8 +1,7 @@
-use std::mem::zeroed;
 use std::ptr::null_mut;
 use std::sync::Mutex;
 
-use sdl3_main::{app_event, app_init, app_iterate, app_quit, AppResult};
+use sdl3_main::{AppResult, app_event, app_init, app_iterate, app_quit};
 use sdl3_sys::everything::*;
 
 use sdl3_experiment::common::*;
@@ -62,7 +61,7 @@ fn app_iterate(app: &mut AppState) -> AppResult {
         }
 
         if !swapchain_texture.is_null() {
-            let mut color_target_info: SDL_GPUColorTargetInfo = zeroed();
+            let mut color_target_info: SDL_GPUColorTargetInfo = Default::default();
             color_target_info.texture = swapchain_texture;
             color_target_info.clear_color = SDL_FColor {
                 r: 0.0,
@@ -124,10 +123,8 @@ fn app_iterate(app: &mut AppState) -> AppResult {
 #[app_init]
 fn app_init() -> Option<Box<Mutex<AppState>>> {
     unsafe {
-        let window_title = c"GPU Window".as_ptr();
-        // TODO other shader types
-        let window_flags = SDL_WINDOW_VULKAN;
-        let Some((window, device)) = init_gpu_window(window_title, window_flags) else {
+        let title = c"GPU Window".as_ptr();
+        let Some((window, device)) = init_gpu_window(title, 0) else {
             return None;
         };
 
@@ -151,12 +148,12 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
                 num_color_targets: 1,
                 color_target_descriptions: [SDL_GPUColorTargetDescription {
                     format: SDL_GetGPUSwapchainTextureFormat(device, window),
-                    ..zeroed()
+                    ..Default::default()
                 }]
                 .as_ptr(),
-                ..zeroed()
+                ..Default::default()
             },
-            ..zeroed()
+            ..Default::default()
         };
 
         pipeline_create_info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
