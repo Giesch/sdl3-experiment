@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::ptr::{null, null_mut};
 
 use sdl3_sys::everything::*;
@@ -6,10 +6,10 @@ use sdl3_sys::everything::*;
 use serde::Deserialize;
 
 /// Load a precompiled shader based on file name.
-/// Relies on the structure of the content directory and the file name suffix.
+/// Relies on the structure of the content directory, json metadata, and the file name suffix.
 pub unsafe fn load_shader(
     device: *mut SDL_GPUDevice,
-    file_name: &'static str,
+    shader_name: &'static str,
 ) -> *mut SDL_GPUShader {
     const COMPILED_SHADERS_DIR: &'static str = "./content/shaders/compiled";
 
@@ -25,16 +25,16 @@ pub unsafe fn load_shader(
         return null_mut();
     };
 
-    let full_path = format!("{COMPILED_SHADERS_DIR}/spv/{file_name}.spv");
+    let full_path = format!("{COMPILED_SHADERS_DIR}/spv/{shader_name}.spv");
     let full_path = CString::new(full_path).unwrap();
     let mut code_size = 0;
     let loaded_code = SDL_LoadFile(full_path.as_ptr(), &mut code_size);
     if loaded_code.is_null() {
-        dbg_sdl_error(&format!("failed to load shader: {file_name}"));
+        dbg_sdl_error(&format!("failed to load shader: {shader_name}"));
         return null_mut();
     }
 
-    let json_path = format!("{COMPILED_SHADERS_DIR}/json/{file_name}.json");
+    let json_path = format!("{COMPILED_SHADERS_DIR}/json/{shader_name}.json");
     let Ok(json) = std::fs::read_to_string(&json_path) else {
         println!("failed to find shader json: {json_path}");
         return null_mut();
@@ -47,9 +47,9 @@ pub unsafe fn load_shader(
         }
     };
 
-    let stage = if file_name.ends_with(".vert") {
+    let stage = if shader_name.ends_with(".vert") {
         SDL_GPUShaderStage::VERTEX
-    } else if file_name.ends_with(".frag") {
+    } else if shader_name.ends_with(".frag") {
         SDL_GPUShaderStage::FRAGMENT
     } else {
         panic!("expected a file name ending in '.frag' or '.vert'")
@@ -69,7 +69,7 @@ pub unsafe fn load_shader(
     };
     let shader = SDL_CreateGPUShader(device, &shader_info);
     if shader.is_null() {
-        dbg_sdl_error(&format!("failed to create shader: {}", file_name));
+        dbg_sdl_error(&format!("failed to create shader: {}", shader_name));
         SDL_free(loaded_code);
         return null_mut();
     }
@@ -80,9 +80,12 @@ pub unsafe fn load_shader(
 }
 
 pub unsafe fn dbg_sdl_error(msg: &str) {
-    println!("{}", msg);
-    let error = CStr::from_ptr(SDL_GetError()).to_string_lossy();
-    dbg!(&error);
+    #[cfg(debug_assertions)]
+    {
+        println!("{}", msg);
+        let error = CStr::from_ptr(SDL_GetError()).to_string_lossy();
+        println!("{}", &error);
+    }
 }
 
 /// JSON format for resource counts emitted by shadercross
@@ -136,5 +139,82 @@ pub unsafe fn deinit_gpu_window(device: *mut SDL_GPUDevice, window: *mut SDL_Win
     }
     if !device.is_null() {
         SDL_DestroyGPUDevice(device);
+    }
+}
+
+pub unsafe fn load_bmp(file_name: &str) -> *mut SDL_Surface {
+    const IMAGES_DIR: &'static str = "./content/images";
+
+    let full_path = format!("{IMAGES_DIR}/{file_name}");
+    let full_path = CString::new(full_path).unwrap();
+
+    let mut result = SDL_LoadBMP(full_path.as_ptr());
+    if result.is_null() {
+        return result;
+    }
+
+    // NOTE this is only the '4 channels' path of the original example
+    let format = SDL_PixelFormat::ARGB8888;
+    if (*result).format != format {
+        let next = SDL_ConvertSurface(result, format);
+        SDL_DestroySurface(result);
+        result = next;
+    }
+
+    result
+}
+
+pub struct Matrix4x4 {
+    pub m11: f32,
+    pub m12: f32,
+    pub m13: f32,
+    pub m14: f32,
+
+    pub m21: f32,
+    pub m22: f32,
+    pub m23: f32,
+    pub m24: f32,
+
+    pub m31: f32,
+    pub m32: f32,
+    pub m33: f32,
+    pub m34: f32,
+
+    pub m41: f32,
+    pub m42: f32,
+    pub m43: f32,
+    pub m44: f32,
+}
+
+impl Matrix4x4 {
+    pub fn create_orthographic_off_center(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        z_near_plane: f32,
+        z_far_plane: f32,
+    ) -> Self {
+        Matrix4x4 {
+            m11: 2.0 / (right - left),
+            m12: 0.0,
+            m13: 0.0,
+            m14: 0.0,
+
+            m21: 0.0,
+            m22: 2.0 / (top - bottom),
+            m23: 0.0,
+            m24: 0.0,
+
+            m31: 0.0,
+            m32: 0.0,
+            m33: 1.0 / (z_near_plane - z_far_plane),
+            m34: 0.0,
+
+            m41: (left + right) / (left - right),
+            m42: (top + bottom) / (bottom - top),
+            m43: z_near_plane / (z_near_plane - z_far_plane),
+            m44: 1.0,
+        }
     }
 }
