@@ -75,7 +75,7 @@ dependencies = [
 [[package]]
 name = "sdl3-main"
 version = "0.6.0"
-source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#923b1bde2247f02131434db8c6872cad2bde6684"
+source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#559e65cb74bc53ef0e76478b727c237e51a02f97"
 dependencies = [
  "sdl3-main-macros",
  "sdl3-sys",
@@ -84,17 +84,17 @@ dependencies = [
 [[package]]
 name = "sdl3-main-macros"
 version = "0.2.0"
-source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#923b1bde2247f02131434db8c6872cad2bde6684"
+source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#559e65cb74bc53ef0e76478b727c237e51a02f97"
 
 [[package]]
 name = "sdl3-src"
 version = "3.2.12"
-source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#923b1bde2247f02131434db8c6872cad2bde6684"
+source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#559e65cb74bc53ef0e76478b727c237e51a02f97"
 
 [[package]]
 name = "sdl3-sys"
 version = "0.6.0+SDL3-3.2.12"
-source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#923b1bde2247f02131434db8c6872cad2bde6684"
+source = "git+https://github.com/maia-s/sdl3-sys-rs?branch=main#559e65cb74bc53ef0e76478b727c237e51a02f97"
 dependencies = [
  "cmake",
  "rpkg-config",
