@@ -124,7 +124,7 @@ fn app_iterate(app: &mut AppState) -> AppResult {
 fn app_init() -> Option<Box<Mutex<AppState>>> {
     unsafe {
         let title = c"Basic Triangle".as_ptr();
-        let Some((window, device)) = init_gpu_window(title, 0) else {
+        let Some((window, device)) = init_gpu_window(title, SDL_WindowFlags::default()) else {
             return None;
         };
 
@@ -255,10 +255,10 @@ impl GameState {
         self.keys_just_pressed.retain(|k| *k != scan_code);
     }
 
-    pub fn step(&mut self, ticks: u64) {
-        let new_ticks = ticks - self.last_step;
+    pub fn step(&mut self, current_tick: u64) {
+        let new_ticks = current_tick - self.last_step;
         self.accumulated_ticks += new_ticks;
-        self.last_step = ticks;
+        self.last_step = current_tick;
 
         while self.accumulated_ticks >= STEP_RATE_IN_MILLISECONDS {
             self.accumulated_ticks -= STEP_RATE_IN_MILLISECONDS;

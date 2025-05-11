@@ -7,6 +7,7 @@ use sdl3_sys::everything::*;
 use sdl3_experiment::common::*;
 
 const SPRITE_COUNT: u32 = 8192;
+const GPU_SPRITE_BUFFER_SIZE: u32 = SPRITE_COUNT * std::mem::size_of::<GPUSprite>() as u32;
 
 struct AppState {
     window: *mut SDL_Window,
@@ -19,7 +20,8 @@ struct AppState {
     sprite_data_buffer: *mut SDL_GPUBuffer,
 
     cpu_sprites: [CPUSprite; SPRITE_COUNT as usize],
-    last_draw_tick: u64,
+    last_tick: u64,
+    accumulated_ticks: u64,
 }
 
 impl Drop for AppState {
@@ -118,7 +120,7 @@ impl CPUSprite {
         gpu_sprite.tex_v = Self::V_COORDS[self.ravioli];
     }
 
-    unsafe fn randomize(&mut self) {
+    fn randomize(&mut self) {
         unsafe {
             self.x = SDL_rand(640) as f32;
             self.y = SDL_rand(480) as f32;
@@ -132,7 +134,7 @@ impl CPUSprite {
 fn app_init() -> Option<Box<Mutex<AppState>>> {
     unsafe {
         let title = c"Pull Sprite Batch Example".as_ptr();
-        let Some((window, device)) = init_gpu_window(title, 0) else {
+        let Some((window, device)) = init_gpu_window(title, SDL_WindowFlags::default()) else {
             return None;
         };
 
@@ -248,7 +250,7 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             device,
             &SDL_GPUTransferBufferCreateInfo {
                 usage: SDL_GPUTransferBufferUsage::UPLOAD,
-                size: SPRITE_COUNT * std::mem::size_of::<GPUSprite>() as u32,
+                size: GPU_SPRITE_BUFFER_SIZE,
                 ..Default::default()
             },
         );
@@ -257,7 +259,7 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             device,
             &SDL_GPUBufferCreateInfo {
                 usage: SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ,
-                size: SPRITE_COUNT * std::mem::size_of::<GPUSprite>() as u32,
+                size: GPU_SPRITE_BUFFER_SIZE,
                 ..Default::default()
             },
         );
@@ -290,7 +292,6 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
 
         let cpu_sprites: [CPUSprite; SPRITE_COUNT as usize] =
             std::array::from_fn(|_| CPUSprite::default());
-        let last_draw_tick = 0;
 
         let app = AppState {
             window,
@@ -301,69 +302,46 @@ fn app_init() -> Option<Box<Mutex<AppState>>> {
             sprite_data_transfer_buffer,
             sprite_data_buffer,
             cpu_sprites,
-            last_draw_tick,
+            last_tick: 0,
+            accumulated_ticks: 0,
         };
 
         Some(Box::new(Mutex::new(app)))
     }
 }
 
-const CAMERA_CONFIG: CameraConfig = CameraConfig {
-    left: 0.0,
-    right: 640.0,
-    bottom: 480.0,
-    top: 0.0,
-    z_near_plane: 0.0,
-    z_far_plane: -1.0,
-};
-
 // about 60 frames per second
 const MILLIS_PER_FRAME: u64 = 16;
 
 #[app_iterate]
 fn app_iterate(app: &mut AppState) -> AppResult {
-    unsafe {
-        // manage fixed time step
-        let current_tick = SDL_GetTicks();
-        let millis_since_draw = current_tick - app.last_draw_tick;
-        if millis_since_draw < MILLIS_PER_FRAME {
-            return AppResult::Continue;
+    let current_tick = unsafe { SDL_GetTicks() };
+    let new_ticks = current_tick - app.last_tick;
+    app.accumulated_ticks += new_ticks;
+    app.last_tick = current_tick;
+
+    while app.accumulated_ticks >= MILLIS_PER_FRAME {
+        app.accumulated_ticks -= MILLIS_PER_FRAME;
+        let app_result = update_and_draw(app);
+        if app_result != AppResult::Continue {
+            return app_result;
         }
-        app.last_draw_tick = current_tick;
-
-        // randomize sprites
-        for sprite in &mut app.cpu_sprites {
-            sprite.randomize();
-        }
-
-        // draw
-        draw_sprites(app, &CAMERA_CONFIG)
     }
+
+    AppResult::Continue
 }
 
-struct CameraConfig {
-    left: f32,
-    right: f32,
-    bottom: f32,
-    top: f32,
-    z_near_plane: f32,
-    z_far_plane: f32,
-}
-
-impl From<&CameraConfig> for Matrix4x4 {
-    fn from(camera_config: &CameraConfig) -> Self {
-        Matrix4x4::create_orthographic_off_center(
-            camera_config.left,
-            camera_config.right,
-            camera_config.bottom,
-            camera_config.top,
-            camera_config.z_near_plane,
-            camera_config.z_far_plane,
-        )
+fn update_and_draw(app: &mut AppState) -> AppResult {
+    // randomize sprites
+    for sprite in &mut app.cpu_sprites {
+        sprite.randomize();
     }
+
+    // draw
+    draw_sprites(app)
 }
 
-unsafe fn draw_sprites(app: &mut AppState, camera_config: &CameraConfig) -> AppResult {
+fn draw_sprites(app: &mut AppState) -> AppResult {
     unsafe {
         let command_buffer = SDL_AcquireGPUCommandBuffer(app.device);
         if command_buffer.is_null() {
@@ -400,7 +378,7 @@ unsafe fn draw_sprites(app: &mut AppState, camera_config: &CameraConfig) -> AppR
 
             SDL_UnmapGPUTransferBuffer(app.device, app.sprite_data_transfer_buffer);
 
-            // upload instance data
+            // upload gpu sprite instance data
             let copy_pass = SDL_BeginGPUCopyPass(command_buffer);
             SDL_UploadToGPUBuffer(
                 copy_pass,
@@ -411,7 +389,7 @@ unsafe fn draw_sprites(app: &mut AppState, camera_config: &CameraConfig) -> AppR
                 &SDL_GPUBufferRegion {
                     buffer: app.sprite_data_buffer,
                     offset: 0,
-                    size: SPRITE_COUNT * std::mem::size_of::<GPUSprite>() as u32,
+                    size: GPU_SPRITE_BUFFER_SIZE,
                 },
                 true,
             );
@@ -448,11 +426,12 @@ unsafe fn draw_sprites(app: &mut AppState, camera_config: &CameraConfig) -> AppR
                 },
                 1,
             );
-            let camera_matrix: Matrix4x4 = camera_config.into();
+            const CAMERA_MATRIX: Matrix4x4 =
+                Matrix4x4::create_orthographic_off_center(0.0, 640.0, 480.0, 0.0, 0.0, -1.0);
             SDL_PushGPUVertexUniformData(
                 command_buffer,
                 0,
-                &camera_matrix as *const Matrix4x4 as *const c_void,
+                &CAMERA_MATRIX as *const Matrix4x4 as *const c_void,
                 std::mem::size_of::<Matrix4x4>() as u32,
             );
             SDL_DrawGPUPrimitives(render_pass, SPRITE_COUNT * 6, 1, 0, 0);

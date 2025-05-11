@@ -65,7 +65,7 @@ pub unsafe fn load_shader(
         num_storage_buffers: meta.storage_buffers,
         num_uniform_buffers: meta.uniform_buffers,
         num_storage_textures: meta.storage_textures,
-        props: 0,
+        props: SDL_PropertiesID::default(),
     };
     let shader = SDL_CreateGPUShader(device, &shader_info);
     if shader.is_null() {
@@ -187,7 +187,7 @@ pub struct Matrix4x4 {
 }
 
 impl Matrix4x4 {
-    pub fn create_orthographic_off_center(
+    pub const fn create_orthographic_off_center(
         left: f32,
         right: f32,
         bottom: f32,
