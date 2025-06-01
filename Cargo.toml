@@ -10,9 +10,8 @@ serde_json = "1.0.133"
 
 [dependencies.sdl3-sys]
 git = "https://github.com/maia-s/sdl3-sys-rs"
-branch = "main"
-features = ["build-from-source-static"]
+tag = "sdl3-sys-v0.5.0"
 
 [dependencies.sdl3-main]
 git = "https://github.com/maia-s/sdl3-sys-rs"
-branch = "main"
+tag = "sdl3-sys-v0.5.0"
